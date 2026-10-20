@@ -1,0 +1,564 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DiabeCare</title>
+<style>
+:root{
+  --navy:#1f3a5f; --teal:#2a7f8e; --bg:#f3f6f9; --card:#fff; --line:#d8e0e8;
+  --text:#1b2733; --muted:#5a6a7a; --ok:#2e7d4f; --warn:#9a6700; --bad:#b3261e;
+}
+*{box-sizing:border-box}
+body{margin:0;font:15px/1.5 system-ui,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text)}
+header{background:var(--navy);color:#fff;padding:12px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+header h1{margin:0;font-size:20px;letter-spacing:.3px}
+header small{opacity:.8;margin-left:8px;font-weight:400;font-size:13px}
+main{max-width:980px;margin:0 auto;padding:18px 16px 60px}
+nav{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+nav button{background:#fff;border:1px solid var(--line);color:var(--navy);padding:8px 14px;border-radius:8px;cursor:pointer;font:inherit;font-weight:600}
+nav button.on{background:var(--teal);border-color:var(--teal);color:#fff}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:16px}
+h2{margin:0 0 12px;font-size:18px;color:var(--navy)}
+h3{margin:14px 0 6px;font-size:15px;color:var(--teal)}
+label{display:block;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:3px}
+input,select{width:100%;padding:8px 10px;border:1px solid #b9c4cf;border-radius:8px;font:inherit;background:#fff;color:var(--text)}
+input:focus,select:focus,button:focus-visible{outline:2px solid var(--teal);outline-offset:1px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;align-items:end}
+button.primary{background:var(--teal);color:#fff;border:0;padding:9px 18px;border-radius:8px;font:inherit;font-weight:600;cursor:pointer}
+button.primary:hover{background:#236b78}
+button.small{background:#fff;border:1px solid var(--line);color:var(--navy);padding:4px 10px;border-radius:6px;cursor:pointer;font:inherit;font-size:13px}
+button.small:hover{background:var(--bg)}
+button.danger{color:var(--bad)}
+button.link{background:none;border:0;color:#fff;cursor:pointer;font:inherit;text-decoration:underline}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);font-size:14px;vertical-align:middle}
+th{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.4px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:16px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+.tile .v{font-size:26px;font-weight:700;color:var(--navy)}
+.tile .l{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+.tile .s{font-size:12px;color:var(--muted)}
+.muted{color:var(--muted)}
+.badge{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:700}
+.b-pending{background:#e8eef5;color:var(--navy)} .b-taken{background:#dff1e6;color:var(--ok)}
+.b-snoozed{background:#fdf1d6;color:var(--warn)} .b-skipped{background:#f3e0de;color:var(--bad)}
+.b-low{background:#dff1e6;color:var(--ok)} .b-moderate{background:#fdf1d6;color:var(--warn)} .b-high{background:#f3e0de;color:var(--bad)}
+#msg{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);padding:10px 18px;border-radius:8px;color:#fff;display:none;max-width:90vw;z-index:9}
+#msg.ok{background:var(--ok)} #msg.err{background:var(--bad)}
+.hidden{display:none}
+.tabs{display:flex;gap:16px;margin-bottom:14px;border-bottom:1px solid var(--line)}
+.tabs button{background:none;border:0;padding:8px 2px;font:inherit;font-weight:600;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent}
+.tabs button.on{color:var(--teal);border-color:var(--teal)}
+svg{width:100%;height:auto;display:block}
+svg .grid{stroke:#e3e9ef} svg .ax{fill:var(--muted);font-size:11px}
+svg .line{fill:none;stroke:var(--teal);stroke-width:2.5} svg .dot{fill:#fff;stroke:var(--teal);stroke-width:2.5}
+svg .range{stroke:#a9c7cd;stroke-width:5;stroke-linecap:round}
+details{margin-top:12px} summary{cursor:pointer;font-weight:600;color:var(--teal)}
+.result{display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+.score{font-size:44px;font-weight:800;color:var(--navy)}
+footer{text-align:center;color:var(--muted);font-size:12px;padding:20px 16px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+@media (max-width:560px){th:nth-child(n+4),td:nth-child(n+4){font-size:13px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>DiabeCare<small>health records &amp; risk estimate</small></h1>
+  <button class="link hidden" id="logout">Log out</button>
+</header>
+
+<main>
+  <!-- ============ AUTH ============ -->
+  <section id="auth" class="card hidden" style="max-width:420px;margin:30px auto">
+    <div class="tabs">
+      <button id="t-login" class="on">Log in</button>
+      <button id="t-register">Register</button>
+    </div>
+    <form id="auth-form">
+      <div id="name-wrap" class="hidden" style="margin-bottom:10px"><label for="a-name">Name</label><input id="a-name" autocomplete="name"></div>
+      <div style="margin-bottom:10px"><label for="a-email">Email</label><input id="a-email" type="email" required autocomplete="email"></div>
+      <div style="margin-bottom:14px"><label for="a-pass">Password (8+ characters)</label><input id="a-pass" type="password" required minlength="8" maxlength="72" autocomplete="current-password"></div>
+      <button class="primary" id="auth-btn" type="submit">Log in</button>
+      <p id="auth-note" class="muted" style="margin-bottom:0"></p>
+    </form>
+  </section>
+
+  <!-- ============ APP ============ -->
+  <div id="app" class="hidden">
+    <nav id="nav">
+      <button data-view="dashboard" class="on">Dashboard</button>
+      <button data-view="glucose">Glucose</button>
+      <button data-view="medicines">Medicines</button>
+      <button data-view="tests">Lab tests</button>
+      <button data-view="risk">Risk estimate</button>
+      <button data-view="chat">Health bot</button>
+      <button data-view="appointments">Appointments</button>
+      <button data-view="admin" id="nav-admin" class="hidden">Admin</button>
+    </nav>
+
+    <!-- Dashboard -->
+    <section id="v-dashboard">
+      <div class="row" style="margin-bottom:12px">
+        <label for="dash-days" style="margin:0">Period</label>
+        <select id="dash-days" style="width:auto"><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option></select>
+      </div>
+      <div class="tiles" id="tiles"></div>
+      <div class="card"><h2>Daily glucose (mg/dL)</h2><div id="chart"></div>
+        <p class="muted" style="margin:6px 0 0;font-size:12px">Line = daily average. Bar = lowest to highest reading of that day. Hover a dot for details.</p></div>
+    </section>
+
+    <!-- Glucose -->
+    <section id="v-glucose" class="hidden">
+      <div class="card"><h2>Add a glucose reading</h2>
+        <form id="glucose-form" class="grid">
+          <div><label for="g-val">Reading (mg/dL, 20 to 600)</label><input id="g-val" type="number" step="0.1" min="20" max="600" required></div>
+          <div><label for="g-note">Note (optional)</label><input id="g-note" maxlength="255" placeholder="e.g. fasting"></div>
+          <div><button class="primary" type="submit">Save reading</button></div>
+        </form></div>
+      <div class="card"><h2>Your readings</h2><p><button class="small" id="csv-glucose" type="button">Download CSV</button></p><div id="glucose-list"></div></div>
+    </section>
+
+    <!-- Medicines -->
+    <section id="v-medicines" class="hidden">
+      <div class="card"><h2>Today's doses</h2><div id="today"></div>
+        <p class="muted" style="font-size:12px;margin-bottom:0">This app only records what you enter. It never suggests or changes a medicine or dose.</p></div>
+      <div class="card"><h2>Add a medicine</h2>
+        <form id="med-form" class="grid">
+          <div><label for="m-name">Medicine name</label><input id="m-name" required maxlength="100"></div>
+          <div><label for="m-ins">Instructions (optional)</label><input id="m-ins" maxlength="255" placeholder="e.g. after food"></div>
+          <div><label for="m-times">Times (24-hour, comma separated)</label><input id="m-times" required value="08:00,20:00" pattern="([01]\d|2[0-3]):[0-5]\d(\s*,\s*([01]\d|2[0-3]):[0-5]\d)*"></div>
+          <div><button class="primary" type="submit">Add medicine</button></div>
+        </form></div>
+      <div class="card"><h2>Your medicines</h2><div id="med-list"></div></div>
+    </section>
+
+    <!-- Tests -->
+    <section id="v-tests" class="hidden">
+      <div class="card"><h2>Add a lab test result</h2>
+        <form id="test-form" class="grid">
+          <div><label for="t-name">Test (e.g. HbA1c)</label><input id="t-name" required maxlength="100" value="HbA1c"></div>
+          <div><label for="t-res">Result</label><input id="t-res" type="number" step="0.01" required></div>
+          <div><label for="t-unit">Unit</label><input id="t-unit" maxlength="30" value="%"></div>
+          <div><label for="t-date">Date</label><input id="t-date" type="date" required></div>
+          <div><label for="t-note">Note (optional)</label><input id="t-note" maxlength="255"></div>
+          <div><button class="primary" type="submit">Save result</button></div>
+        </form></div>
+      <div class="card"><h2>Your results</h2><p><button class="small" id="csv-tests" type="button">Download CSV</button></p><div id="test-list"></div></div>
+    </section>
+
+    <!-- Appointments -->
+    <section id="v-appointments" class="hidden">
+      <div class="card"><h2>Book a doctor appointment</h2>
+        <p class="muted" style="margin-top:0">Pick a doctor and a date to see their open 30-minute slots. Not for emergencies.</p>
+        <form id="appt-form" class="grid">
+          <div><label for="ap-doc">Doctor</label><select id="ap-doc" required></select></div>
+          <div><label for="ap-date">Date</label><input id="ap-date" type="date" required></div>
+          <div><label for="ap-time">Time (open slots)</label><select id="ap-time" required></select></div>
+          <div><label for="ap-reason">Reason (optional)</label><input id="ap-reason" maxlength="255"></div>
+          <div><button class="primary" type="submit">Book appointment</button></div>
+        </form></div>
+      <div class="card"><h2>Your appointments</h2><div id="appt-list"></div></div>
+    </section>
+
+    <!-- Health bot -->
+    <section id="v-chat" class="hidden">
+      <div class="card"><h2>AI health assistant</h2>
+        <p class="muted" style="margin-top:0">General diabetes education only. It is an AI, it can make mistakes, and it is not a doctor. In an emergency call your local emergency number.</p>
+        <div id="chat-box" style="height:340px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;padding:10px;background:#fafcfe"></div>
+        <form id="chat-form" style="margin-top:10px">
+          <div style="display:flex;gap:8px"><input id="chat-in" maxlength="1500" placeholder="Ask about glucose, food, exercise, HbA1c..." autocomplete="off" required>
+            <button class="primary" id="chat-send" type="submit">Send</button></div>
+          <label style="font-weight:normal;margin-top:8px"><input type="checkbox" id="chat-data" style="width:auto"> Share my latest glucose and HbA1c with the AI service for this chat (avoid if you prefer privacy)</label>
+        </form>
+        <p><button class="small" id="chat-clear" type="button">Clear chat</button></p>
+      </div>
+    </section>
+
+    <!-- Admin -->
+    <section id="v-admin" class="hidden">
+      <div class="card"><h2>Add a doctor</h2>
+        <form id="adm-doc-form" class="grid">
+          <div><label for="ad-name">Name</label><input id="ad-name" required minlength="2" maxlength="100"></div>
+          <div><label for="ad-spec">Specialty</label><input id="ad-spec" required minlength="2" maxlength="100"></div>
+          <div><label for="ad-qual">Qualification (optional)</label><input id="ad-qual" maxlength="100"></div>
+          <div><button class="primary" type="submit">Add doctor</button></div>
+        </form></div>
+      <div class="card"><h2>Set a doctor's weekly available time</h2>
+        <form id="adm-av-form">
+          <div class="grid">
+            <div><label for="av-doc">Doctor</label><select id="av-doc" required></select></div>
+            <div><label for="av-start">From</label><input id="av-start" type="time" step="1800" value="09:00" required></div>
+            <div><label for="av-end">To</label><input id="av-end" type="time" step="1800" value="17:00" required></div>
+          </div>
+          <p style="margin:10px 0" id="av-days"></p>
+          <button class="primary" type="submit">Save available time</button>
+        </form></div>
+      <div class="card"><h2>Doctors and their hours</h2><div id="adm-docs"></div></div>
+      <div class="card"><h2>All appointments</h2><div id="adm-appts"></div></div>
+    </section>
+
+    <!-- Risk -->
+    <section id="v-risk" class="hidden">
+      <div class="card"><h2>Diabetes risk estimate</h2>
+        <p class="muted" style="margin-top:0">Answers go to a model trained on the CDC BRFSS 2015 survey. The result is an educational score, not a diagnosis.</p>
+        <form id="risk-form">
+          <div class="grid">
+            <div><label for="r-age">Age (years)</label><input id="r-age" type="number" min="18" max="120" required></div>
+            <div><label for="r-bmi">BMI</label><input id="r-bmi" type="number" step="0.1" min="12" max="98" required></div>
+            <div><label for="r-sex">Sex</label><select id="r-sex"><option value="0">Female</option><option value="1">Male</option></select></div>
+            <div><label for="r-bp">High blood pressure?</label><select id="r-bp"><option value="0">No</option><option value="1">Yes</option></select></div>
+            <div><label for="r-chol">High cholesterol?</label><select id="r-chol"><option value="0">No</option><option value="1">Yes</option></select></div>
+            <div><label for="r-gen">General health</label><select id="r-gen"><option value="1">1 - Excellent</option><option value="2">2 - Very good</option><option value="3" selected>3 - Good</option><option value="4">4 - Fair</option><option value="5">5 - Poor</option></select></div>
+          </div>
+          <details><summary>More details (optional)</summary><div class="grid" id="adv" style="margin-top:10px"></div></details>
+          <p><button class="primary" type="submit">Estimate risk</button></p>
+        </form>
+        <div id="risk-result"></div>
+      </div>
+      <div class="card"><h2>Past estimates</h2><div id="risk-history"></div></div>
+    </section>
+  </div>
+</main>
+<footer>DiabeCare is an educational prototype. It is not a medical device and does not give medical advice or diagnosis.</footer>
+<div id="msg" role="status" aria-live="polite"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let token = null, authMode = 'login', msgTimer;
+try { token = localStorage.getItem('dc_token'); } catch (e) {}
+function saveToken(t) { token = t; try { t ? localStorage.setItem('dc_token', t) : localStorage.removeItem('dc_token'); } catch (e) {} }
+
+function toast(text, ok = true) {
+  const m = $('#msg'); m.textContent = text; m.className = ok ? 'ok' : 'err'; m.style.display = 'block';
+  clearTimeout(msgTimer); msgTimer = setTimeout(() => m.style.display = 'none', 4500);
+}
+function fmtErr(d) {
+  if (!d) return '';
+  if (typeof d.detail === 'string') return d.detail;
+  if (Array.isArray(d.detail)) return d.detail.map(x => ((x.loc || []).slice(1).join('.') + ': ' + x.msg).replace(/^: /, '')).join('; ');
+  return '';
+}
+async function api(path, method = 'GET', body, auth = true) {
+  const headers = {};
+  if (body) headers['Content-Type'] = 'application/json';
+  if (auth && token) headers.Authorization = 'Bearer ' + token;
+  const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  if (res.status === 401 && auth) { showAuth('Your session ended. Please log in again.'); throw new Error('session'); }
+  if (res.status === 204) return null;
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(fmtErr(data) || res.statusText);
+  return data;
+}
+// run an action, show errors as a toast
+async function run(fn) { try { await fn(); } catch (e) { if (e.message !== 'session') toast(e.message, false); } }
+
+/* ---------- auth ---------- */
+function showAuth(note) {
+  saveToken(null);
+  $('#auth').classList.remove('hidden'); $('#app').classList.add('hidden'); $('#logout').classList.add('hidden');
+  $('#auth-note').textContent = note || '';
+}
+function showApp() {
+  $('#auth').classList.add('hidden'); $('#app').classList.remove('hidden'); $('#logout').classList.remove('hidden');
+  go('dashboard');
+  run(async () => { const c = await api('/admin/check'); $('#nav-admin').classList.toggle('hidden', !c.is_admin); });
+}
+function setMode(m) {
+  authMode = m;
+  $('#t-login').classList.toggle('on', m === 'login'); $('#t-register').classList.toggle('on', m === 'register');
+  $('#name-wrap').classList.toggle('hidden', m === 'login');
+  $('#a-name').required = m === 'register';
+  $('#auth-btn').textContent = m === 'login' ? 'Log in' : 'Create account';
+  $('#a-pass').autocomplete = m === 'login' ? 'current-password' : 'new-password';
+}
+$('#t-login').onclick = () => setMode('login');
+$('#t-register').onclick = () => setMode('register');
+$('#auth-form').onsubmit = e => { e.preventDefault(); run(async () => {
+  const email = $('#a-email').value.trim(), password = $('#a-pass').value;
+  if (authMode === 'register') {
+    await api('/register', 'POST', { name: $('#a-name').value.trim(), email, password }, false);
+    toast('Account created. Logging you in...');
+  }
+  const t = await api('/login', 'POST', { email, password }, false);
+  saveToken(t.access_token); $('#a-pass').value = ''; showApp();
+}); };
+$('#logout').onclick = () => showAuth('You have been logged out.');
+
+/* ---------- navigation ---------- */
+const loaders = { dashboard: loadDashboard, glucose: loadGlucose, medicines: loadMedicines, tests: loadTests, risk: loadRisk, appointments: loadAppointments, admin: loadAdmin, chat: loadChat };
+function go(view) {
+  document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.dataset.view === view));
+  Object.keys(loaders).forEach(v => $('#v-' + v).classList.toggle('hidden', v !== view));
+  run(loaders[view]);
+}
+$('#nav').onclick = e => { if (e.target.dataset.view) go(e.target.dataset.view); };
+
+/* ---------- dashboard ---------- */
+const tile = (l, v, s) => `<div class="tile"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s || '&nbsp;'}</div></div>`;
+async function loadDashboard() {
+  const d = await api('/dashboard?days=' + $('#dash-days').value);
+  $('#tiles').innerHTML =
+    tile('Latest glucose', d.latest_glucose != null ? d.latest_glucose + ' <small>mg/dL</small>' : '-', d.latest_glucose_time ? new Date(d.latest_glucose_time).toLocaleString() : 'no readings yet') +
+    tile('Average glucose', d.average_glucose != null ? d.average_glucose + ' <small>mg/dL</small>' : '-', 'last ' + d.days + ' days') +
+    tile('Medicine adherence', d.adherence_percent != null ? d.adherence_percent + '%' : '-', d.doses_total ? d.doses_taken + ' of ' + d.doses_total + ' doses taken' : 'no doses due yet') +
+    tile('Latest HbA1c', d.latest_hba1c != null ? d.latest_hba1c + ' <small>%</small>' : '-', d.latest_hba1c_date || 'no result yet');
+  drawChart(d.daily_glucose);
+}
+$('#dash-days').onchange = () => run(loadDashboard);
+function drawChart(rows) {
+  const box = $('#chart');
+  if (!rows.length) { box.innerHTML = '<p class="muted">No glucose readings in this period yet. Add some on the Glucose tab.</p>'; return; }
+  const W = 640, H = 230, L = 44, R = 14, T = 14, B = 30;
+  const vals = rows.flatMap(r => [r.min_glucose, r.max_glucose]);
+  let lo = Math.floor((Math.min(...vals) - 10) / 10) * 10, hi = Math.ceil((Math.max(...vals) + 10) / 10) * 10;
+  if (hi - lo < 40) hi = lo + 40;
+  const x = i => rows.length === 1 ? L + (W - L - R) / 2 : L + i * (W - L - R) / (rows.length - 1);
+  const y = v => T + (hi - v) * (H - T - B) / (hi - lo);
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Daily average glucose chart">`;
+  for (let k = 0; k <= 3; k++) { const v = lo + (hi - lo) * k / 3;
+    s += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="grid"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" class="ax">${Math.round(v)}</text>`; }
+  rows.forEach((r, i) => s += `<line x1="${x(i)}" x2="${x(i)}" y1="${y(r.min_glucose)}" y2="${y(r.max_glucose)}" class="range"/>`);
+  s += `<polyline class="line" points="${rows.map((r, i) => x(i) + ',' + y(r.avg_glucose)).join(' ')}"/>`;
+  const step = Math.ceil(rows.length / 8);
+  rows.forEach((r, i) => {
+    s += `<circle cx="${x(i)}" cy="${y(r.avg_glucose)}" r="4.5" class="dot"><title>${esc(r.day)}: average ${r.avg_glucose}, lowest ${r.min_glucose}, highest ${r.max_glucose} (${r.readings} readings)</title></circle>`;
+    if (i % step === 0) s += `<text x="${x(i)}" y="${H - 10}" text-anchor="middle" class="ax">${esc(String(r.day).slice(5))}</text>`;
+  });
+  box.innerHTML = s + '</svg>';
+}
+
+/* ---------- glucose ---------- */
+async function loadGlucose() {
+  const rows = await api('/glucose');
+  $('#glucose-list').innerHTML = rows.length
+    ? `<table><tr><th>When</th><th>mg/dL</th><th>Note</th><th></th></tr>${rows.map(r =>
+      `<tr><td>${esc(new Date(r.reading_time).toLocaleString())}</td><td><b>${esc(r.reading_value)}</b></td><td>${esc(r.notes)}</td>
+       <td><button class="small danger" data-del="${r.record_id}">Delete</button></td></tr>`).join('')}</table>`
+    : '<p class="muted">No readings yet.</p>';
+}
+$('#glucose-form').onsubmit = e => { e.preventDefault(); run(async () => {
+  await api('/glucose', 'POST', { reading_value: +$('#g-val').value, notes: $('#g-note').value.trim() || null });
+  e.target.reset(); toast('Reading saved'); await loadGlucose();
+}); };
+$('#glucose-list').onclick = e => { const id = e.target.dataset.del; if (id && confirm('Delete this reading?')) run(async () => {
+  await api('/glucose/' + id, 'DELETE'); toast('Deleted'); await loadGlucose(); }); };
+
+/* ---------- medicines ---------- */
+async function loadMedicines() {
+  const [doses, meds] = await Promise.all([api('/medicines/today'), api('/medicines')]);
+  $('#today').innerHTML = doses.length
+    ? `<table><tr><th>Time</th><th>Medicine</th><th>Status</th><th>Mark as</th></tr>${doses.map(d =>
+      `<tr><td>${esc(d.scheduled_time.slice(11, 16))}</td><td>${esc(d.medicine_name)}</td>
+       <td><span class="badge b-${esc(d.status)}">${esc(d.status)}</span></td>
+       <td><div class="row"><button class="small" data-dose="${d.dose_log_id}" data-st="taken">Taken</button>
+       <button class="small" data-dose="${d.dose_log_id}" data-st="snoozed">Snooze</button>
+       <button class="small" data-dose="${d.dose_log_id}" data-st="skipped">Skip</button></div></td></tr>`).join('')}</table>`
+    : '<p class="muted">No doses scheduled for today. Add a medicine below.</p>';
+  const active = meds.filter(m => m.active);
+  $('#med-list').innerHTML = active.length
+    ? `<table><tr><th>Medicine</th><th>Instructions</th><th>Times</th><th></th></tr>${active.map(m =>
+      `<tr><td><b>${esc(m.medicine_name)}</b></td><td>${esc(m.instructions)}</td><td>${esc(m.schedule_times)}</td>
+       <td><button class="small danger" data-rm="${m.medicine_id}">Stop</button></td></tr>`).join('')}</table>`
+    : '<p class="muted">No medicines added yet.</p>';
+}
+$('#today').onclick = e => { const id = e.target.dataset.dose; if (id) run(async () => {
+  await api(`/doses/${id}/status`, 'POST', { status: e.target.dataset.st }); await loadMedicines(); }); };
+$('#med-list').onclick = e => { const id = e.target.dataset.rm; if (id && confirm('Stop this medicine? Past doses are kept.')) run(async () => {
+  await api('/medicines/' + id, 'DELETE'); toast('Medicine stopped'); await loadMedicines(); }); };
+$('#med-form').onsubmit = e => { e.preventDefault(); run(async () => {
+  await api('/medicines', 'POST', { medicine_name: $('#m-name').value.trim(), instructions: $('#m-ins').value.trim() || null,
+    schedule_times: $('#m-times').value.replace(/\s/g, '') });
+  e.target.reset(); toast('Medicine added'); await loadMedicines();
+}); };
+
+/* ---------- lab tests ---------- */
+async function loadTests() {
+  const rows = await api('/tests');
+  $('#test-list').innerHTML = rows.length
+    ? `<table><tr><th>Date</th><th>Test</th><th>Result</th><th>Note</th><th></th></tr>${rows.map(r =>
+      `<tr><td>${esc(r.test_date)}</td><td>${esc(r.test_name)}</td><td><b>${esc(r.result)}</b> ${esc(r.unit)}</td><td>${esc(r.notes)}</td>
+       <td><button class="small danger" data-del="${r.test_id}">Delete</button></td></tr>`).join('')}</table>`
+    : '<p class="muted">No results yet.</p>';
+}
+$('#test-form').onsubmit = e => { e.preventDefault(); run(async () => {
+  await api('/tests', 'POST', { test_name: $('#t-name').value.trim(), result: +$('#t-res').value, unit: $('#t-unit').value.trim() || null,
+    test_date: $('#t-date').value, notes: $('#t-note').value.trim() || null });
+  e.target.reset(); $('#t-name').value = 'HbA1c'; $('#t-unit').value = '%'; $('#t-date').valueAsDate = new Date();
+  toast('Result saved'); await loadTests();
+}); };
+$('#test-list').onclick = e => { const id = e.target.dataset.del; if (id && confirm('Delete this result?')) run(async () => {
+  await api('/tests/' + id, 'DELETE'); toast('Deleted'); await loadTests(); }); };
+
+/* ---------- risk estimate ---------- */
+const YN = [['CholCheck','Cholesterol checked in last 5 years',1],['Smoker','Smoked 100+ cigarettes in lifetime',0],
+  ['Stroke','Ever had a stroke',0],['HeartDiseaseorAttack','Heart disease or heart attack',0],
+  ['PhysActivity','Physical activity in last 30 days',1],['Fruits','Eats fruit daily',1],['Veggies','Eats vegetables daily',1],
+  ['HvyAlcoholConsump','Heavy alcohol use',0],['AnyHealthcare','Has health coverage',1],
+  ['NoDocbcCost','Skipped a doctor visit because of cost',0],['DiffWalk','Difficulty walking or climbing stairs',0]];
+const EDU = ['Never attended / kindergarten','Grades 1-8','Grades 9-11','High school graduate','Some college','College graduate'];
+const INC = ['Under $10,000','$10,000 - $15,000','$15,000 - $20,000','$20,000 - $25,000','$25,000 - $35,000','$35,000 - $50,000','$50,000 - $75,000','$75,000 or more'];
+const opts = (arr, sel) => arr.map((t, i) => `<option value="${i + 1}"${i + 1 === sel ? ' selected' : ''}>${esc(t)}</option>`).join('');
+$('#adv').innerHTML =
+  YN.map(([k, l, d]) => `<div><label for="x-${k}">${l}</label><select id="x-${k}"><option value="0"${d ? '' : ' selected'}>No</option><option value="1"${d ? ' selected' : ''}>Yes</option></select></div>`).join('') +
+  `<div><label for="x-MentHlth">Bad mental-health days (last 30)</label><input id="x-MentHlth" type="number" min="0" max="30" value="0"></div>
+   <div><label for="x-PhysHlth">Bad physical-health days (last 30)</label><input id="x-PhysHlth" type="number" min="0" max="30" value="0"></div>
+   <div><label for="x-Education">Education</label><select id="x-Education">${opts(EDU, 4)}</select></div>
+   <div><label for="x-Income">Yearly household income</label><select id="x-Income">${opts(INC, 5)}</select></div>`;
+
+async function loadRisk() { await loadRiskHistory(); }
+async function loadRiskHistory() {
+  const rows = await api('/risk/history');
+  $('#risk-history').innerHTML = rows.length
+    ? `<table><tr><th>When</th><th>Score</th><th>Category</th><th></th></tr>${rows.map(r =>
+      `<tr><td>${esc(new Date(r.created_at).toLocaleString())}</td><td>${esc(r.risk_score)}</td><td><span class="badge b-${esc(r.risk_category)}">${esc(r.risk_category)}</span></td>
+       <td><button class="small danger" data-del="${r.assessment_id}">Delete</button></td></tr>`).join('')}</table>`
+    : '<p class="muted">No estimates yet.</p>';
+}
+$('#risk-history').onclick = e => { const id = e.target.dataset.del; if (id && confirm('Delete this estimate?')) run(async () => {
+  await api('/risk/history/' + id, 'DELETE'); toast('Deleted'); await loadRiskHistory(); }); };
+$('#risk-form').onsubmit = e => { e.preventDefault(); run(async () => {
+  const p = { age_years: +$('#r-age').value, BMI: +$('#r-bmi').value, Sex: +$('#r-sex').value,
+    HighBP: +$('#r-bp').value, HighChol: +$('#r-chol').value, GenHlth: +$('#r-gen').value };
+  YN.forEach(([k]) => p[k] = +$('#x-' + k).value);
+  ['MentHlth', 'PhysHlth', 'Education', 'Income'].forEach(k => p[k] = +$('#x-' + k).value);
+  const r = await api('/risk/estimate', 'POST', p);
+  $('#risk-result').innerHTML = `<div class="card" style="background:var(--bg);margin:6px 0 0"><div class="result">
+    <div><div class="muted" style="font-size:12px">RISK SCORE</div><div class="score">${esc(r.risk_score)}</div></div>
+    <div><span class="badge b-${esc(r.risk_category)}" style="font-size:15px">${esc(r.risk_category)} risk</span>
+    ${r.top_factors.length ? `<p style="margin:8px 0 0">Main factors raising this score: <b>${r.top_factors.map(esc).join(', ')}</b></p>` : '<p class="muted" style="margin:8px 0 0">No single factor stands out.</p>'}</div></div>
+    <p class="muted" style="font-size:13px;margin:10px 0 0">${esc(r.disclaimer)}</p></div>`;
+  await loadRiskHistory();
+}); };
+
+/* ---------- start ---------- */
+$('#t-date').valueAsDate = new Date();
+token ? showApp() : showAuth();
+
+/* ---------- CSV export (built in the browser from your own data) ---------- */
+function csvCell(v) {
+  let s = v == null ? '' : String(v);
+  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;           // stop spreadsheet formula injection
+  return '"' + s.replace(/"/g, '""') + '"';
+}
+function downloadCsv(name, header, rows) {
+  const text = '\ufeff' + [header, ...rows].map(r => r.map(csvCell).join(',')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
+  a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+$('#csv-glucose').onclick = () => run(async () => {
+  const rows = await api('/glucose');
+  downloadCsv('glucose_readings.csv', ['Time', 'Glucose (mg/dL)', 'Notes'], rows.map(r => [r.reading_time, r.reading_value, r.notes]));
+});
+$('#csv-tests').onclick = () => run(async () => {
+  const rows = await api('/tests');
+  downloadCsv('lab_tests.csv', ['Date', 'Test', 'Result', 'Unit', 'Notes'], rows.map(r => [r.test_date, r.test_name, r.result, r.unit, r.notes]));
+});
+
+/* ---------- appointments ---------- */
+const pad2 = n => String(n).padStart(2, '0');
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const tomorrowIso = () => { const d = new Date(); d.setDate(d.getDate() + 1);
+  return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); };
+async function loadSlots() {
+  const doc = $('#ap-doc').value, day = $('#ap-date').value, sel = $('#ap-time');
+  sel.innerHTML = '';
+  if (!doc || !day) return;
+  const r = await api(`/doctors/${doc}/slots?date=${encodeURIComponent(day)}`);
+  r.slots.forEach(t => sel.add(new Option(t, t)));
+  if (!r.slots.length) sel.add(new Option('No open slots on this date', ''));
+}
+async function loadAppointments() {
+  $('#ap-date').min = tomorrowIso(); if (!$('#ap-date').value) $('#ap-date').value = tomorrowIso();
+  const docs = await api('/doctors');
+  const sel = $('#ap-doc'), keep = sel.value;
+  sel.innerHTML = docs.map(d => `<option value="${d.doctor_id}">${esc(d.name)} - ${esc(d.specialty)}</option>`).join('');
+  if (keep) sel.value = keep;
+  await loadSlots();
+  const rows = await api('/appointments');
+  $('#appt-list').innerHTML = rows.length
+    ? `<table><tr><th>When</th><th>Doctor</th><th>Reason</th><th>Status</th><th></th></tr>${rows.map(r =>
+      `<tr><td>${esc(new Date(r.appointment_time).toLocaleString())}</td><td>${esc(r.doctor_name)}<br><span class="muted">${esc(r.specialty)}</span></td>
+       <td>${esc(r.reason)}</td><td>${esc(r.status)}</td>
+       <td>${r.status === 'booked' ? `<button class="small danger" data-cancel="${r.appointment_id}">Cancel</button>` : ''}</td></tr>`).join('')}</table>`
+    : '<p class="muted">No appointments yet.</p>';
+}
+$('#ap-doc').onchange = () => run(loadSlots);
+$('#ap-date').onchange = () => run(loadSlots);
+$('#appt-form').onsubmit = e => { e.preventDefault(); run(async () => {
+  if (!$('#ap-time').value) throw new Error('Choose a date and time with an open slot');
+  await api('/appointments', 'POST', { doctor_id: +$('#ap-doc').value,
+    appointment_time: $('#ap-date').value + 'T' + $('#ap-time').value + ':00', reason: $('#ap-reason').value.trim() || null });
+  $('#ap-reason').value = ''; toast('Appointment booked'); await loadAppointments();
+}); };
+$('#appt-list').onclick = e => { const id = e.target.dataset.cancel; if (id && confirm('Cancel this appointment?')) run(async () => {
+  await api(`/appointments/${id}/cancel`, 'POST'); toast('Appointment cancelled'); await loadAppointments(); }); };
+
+/* ---------- admin ---------- */
+$('#av-days').innerHTML = DAYS.map((d, i) =>
+  `<label style="display:inline-block;margin-right:12px;font-weight:normal"><input type="checkbox" class="av-day" value="${i}" ${i < 6 ? 'checked' : ''} style="width:auto"> ${d}</label>`).join('');
+async function loadAdmin() {
+  const docs = await api('/doctors');
+  const keep = $('#av-doc').value;
+  $('#av-doc').innerHTML = docs.map(d => `<option value="${d.doctor_id}">${esc(d.name)}</option>`).join('');
+  if (keep) $('#av-doc').value = keep;
+  const blocks = await Promise.all(docs.map(async d => {
+    const av = await api(`/doctors/${d.doctor_id}/availability`);
+    const hours = av.length ? av.map(a => `<span style="display:inline-block;margin:2px 8px 2px 0">${DAYS[a.weekday]} ${esc(a.start_time.slice(0, 5))}-${esc(a.end_time.slice(0, 5))}
+       <button class="small danger" data-delav="${a.availability_id}">x</button></span>`).join('') : '<span class="muted">No hours set, so users cannot book this doctor</span>';
+    return `<tr><td><b>${esc(d.name)}</b><br><span class="muted">${esc(d.specialty)}${d.qualification ? ', ' + esc(d.qualification) : ''}</span></td><td>${hours}</td>
+      <td><button class="small danger" data-deldoc="${d.doctor_id}">Delete</button></td></tr>`;
+  }));
+  $('#adm-docs').innerHTML = `<table><tr><th>Doctor</th><th>Available time (every week)</th><th></th></tr>${blocks.join('')}</table>`;
+  const rows = await api('/admin/appointments');
+  $('#adm-appts').innerHTML = rows.length
+    ? `<table><tr><th>When</th><th>Patient</th><th>Doctor</th><th>Reason</th><th>Status</th></tr>${rows.map(r =>
+      `<tr><td>${esc(new Date(r.appointment_time).toLocaleString())}</td><td>${esc(r.patient_name)}</td><td>${esc(r.doctor_name)}</td><td>${esc(r.reason)}</td><td>${esc(r.status)}</td></tr>`).join('')}</table>`
+    : '<p class="muted">No appointments yet.</p>';
+}
+$('#adm-doc-form').onsubmit = e => { e.preventDefault(); run(async () => {
+  await api('/admin/doctors', 'POST', { name: $('#ad-name').value, specialty: $('#ad-spec').value, qualification: $('#ad-qual').value });
+  e.target.reset(); toast('Doctor added. Now set their available time'); await loadAdmin(); }); };
+$('#adm-av-form').onsubmit = e => { e.preventDefault(); run(async () => {
+  const days = [...document.querySelectorAll('.av-day:checked')].map(c => +c.value);
+  if (!days.length) throw new Error('Tick at least one day');
+  await api(`/admin/doctors/${$('#av-doc').value}/availability`, 'POST',
+    { weekdays: days, start_time: $('#av-start').value, end_time: $('#av-end').value });
+  toast('Available time saved'); await loadAdmin(); }); };
+$('#adm-docs').onclick = e => {
+  const a = e.target.dataset.delav, d = e.target.dataset.deldoc;
+  if (a) run(async () => { await api(`/admin/availability/${a}`, 'DELETE'); await loadAdmin(); });
+  if (d && confirm('Delete this doctor?')) run(async () => { await api(`/admin/doctors/${d}`, 'DELETE'); toast('Doctor deleted'); await loadAdmin(); });
+};
+
+/* ---------- health bot ---------- */
+let chatMsgs = [];
+function chatBubble(role, text) {
+  const d = document.createElement('div');
+  d.style.cssText = 'margin:6px 0;padding:8px 10px;border-radius:10px;max-width:85%;white-space:pre-wrap;word-wrap:break-word;' +
+    (role === 'user' ? 'background:#dbeafe;margin-left:auto' : 'background:#fff;border:1px solid var(--line)');
+  d.textContent = text;                       // textContent: never interpreted as HTML
+  $('#chat-box').appendChild(d); $('#chat-box').scrollTop = $('#chat-box').scrollHeight;
+  return d;
+}
+function loadChat() {
+  if (!$('#chat-box').children.length) chatBubble('assistant', 'Hello! I can answer general questions about diabetes, food, exercise and this app. What would you like to know?');
+}
+$('#chat-form').onsubmit = e => { e.preventDefault(); run(async () => {
+  const text = $('#chat-in').value.trim(); if (!text) return;
+  $('#chat-in').value = ''; chatMsgs.push({ role: 'user', content: text }); chatBubble('user', text);
+  const wait = chatBubble('assistant', 'Thinking...'); $('#chat-send').disabled = true;
+  try {
+    const r = await api('/chat', 'POST', { messages: chatMsgs, use_my_data: $('#chat-data').checked });
+    wait.textContent = r.reply; chatMsgs.push({ role: 'assistant', content: r.reply });
+  } catch (err) {
+    wait.remove(); chatMsgs.pop(); throw err;       // drop the unanswered question so the history stays valid
+  } finally { $('#chat-send').disabled = false; $('#chat-box').scrollTop = $('#chat-box').scrollHeight; }
+}); };
+$('#chat-clear').onclick = () => { chatMsgs = []; $('#chat-box').innerHTML = ''; loadChat(); };
+</script>
+</body>
+</html>
