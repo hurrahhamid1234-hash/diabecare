@@ -1,17 +1,17 @@
 import json
 import os
+from datetime import datetime
 import time as _time
 import urllib.error
 import urllib.request
 from collections import defaultdict, deque
-from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, delete, func, select
+from sqlalchemy.orm import Mapped, Session, mapped_column
 
-from app.database import get_db
+from app.database import Base, get_db
 from app.deps import get_current_user
 from app.health_guard import OFF_TOPIC_TEXT, emergency_reply, glucose_note, greeting_reply, is_health_related
 from app.models import GlucoseRecord, MedicalTest
@@ -25,6 +25,7 @@ LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
 MODEL = os.environ.get("LLM_MODEL", os.environ.get("OLLAMA_MODEL", "llama3.2:3b"))
 MAX_TOKENS = 400
 MAX_HISTORY = 10                    # last messages sent to the model
+KEEP_MESSAGES = 200                 # stored messages per user (older ones are deleted)
 RATE_LIMIT = 30                     # messages per user per hour
 _hits: dict[int, deque] = defaultdict(deque)
 
@@ -41,11 +42,22 @@ Rules:
 - End advice-type answers with a short reminder to check with their doctor when it matters. Do not repeat the same disclaimer in every message."""
 
 
-class ChatMessage(BaseModel):
-    role: Literal["user", "assistant"]
-    content: str = Field(min_length=1, max_length=1500)
+class ChatLog(Base):
+    """One row per message. Every row belongs to one user, so each person only ever sees their own chat."""
+    __tablename__ = "chat_messages"
+    __table_args__ = (Index("ix_chat_user_id", "user_id", "message_id"),)
+    message_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    role: Mapped[str] = mapped_column(String(10), nullable=False)          # "user" or "assistant"
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
-    @field_validator("content")
+
+class ChatIn(BaseModel):
+    message: str = Field(min_length=1, max_length=1500)
+    use_my_data: bool = False
+
+    @field_validator("message")
     @classmethod
     def strip(cls, v):
         v = v.strip()
@@ -54,13 +66,31 @@ class ChatMessage(BaseModel):
         return v
 
 
-class ChatIn(BaseModel):
-    messages: list[ChatMessage] = Field(min_length=1, max_length=40)
-    use_my_data: bool = False
-
-
 class ChatOut(BaseModel):
     reply: str
+
+
+class HistoryItem(BaseModel):
+    role: str
+    content: str
+
+
+def _recent(db: Session, user_id: int, n: int) -> list[ChatLog]:
+    rows = db.scalars(select(ChatLog).where(ChatLog.user_id == user_id)
+                      .order_by(ChatLog.message_id.desc()).limit(n)).all()
+    return list(reversed(rows))
+
+
+def _save(db: Session, user_id: int, question: str, answer: str) -> str:
+    db.add(ChatLog(user_id=user_id, role="user", content=question))
+    db.add(ChatLog(user_id=user_id, role="assistant", content=answer))
+    db.commit()
+    old = db.scalars(select(ChatLog.message_id).where(ChatLog.user_id == user_id)
+                     .order_by(ChatLog.message_id.desc()).offset(KEEP_MESSAGES)).all()
+    if old:
+        db.execute(delete(ChatLog).where(ChatLog.message_id.in_(old)))
+        db.commit()
+    return answer
 
 
 def _check_rate(user_id: int) -> None:
@@ -89,26 +119,37 @@ def _my_data_note(db: Session, user_id: int) -> str:
     return "\n\nThe user chose to share these values from their records: " + "; ".join(parts) + "."
 
 
+@router.get("/chat/history", response_model=list[HistoryItem])
+def chat_history(db: Session = Depends(get_db), user=Depends(get_current_user)):
+    return [HistoryItem(role=m.role, content=m.content) for m in _recent(db, user.user_id, 100)]
+
+
+@router.delete("/chat/history", status_code=204)
+def clear_history(db: Session = Depends(get_db), user=Depends(get_current_user)):
+    db.execute(delete(ChatLog).where(ChatLog.user_id == user.user_id))
+    db.commit()
+
+
 @router.post("/chat", response_model=ChatOut)
 def chat(body: ChatIn, db: Session = Depends(get_db), user=Depends(get_current_user)):
-    if body.messages[-1].role != "user":
-        raise HTTPException(status_code=422, detail="The last message must be from the user")
-    question = body.messages[-1].content
+    question = body.message
+    past = _recent(db, user.user_id, MAX_HISTORY)         # this user's own earlier messages, read from the database
 
     # 1) fixed safety replies, no model involved
     urgent = emergency_reply(question)
     if urgent:
-        return ChatOut(reply=urgent)
+        return ChatOut(reply=_save(db, user.user_id, question, urgent))
     hello = greeting_reply(question)
     if hello:
-        return ChatOut(reply=hello)
+        return ChatOut(reply=_save(db, user.user_id, question, hello))
     # 2) health topics only
-    has_history = any(m.role == "assistant" for m in body.messages[:-1])
+    has_history = any(m.role == "assistant" for m in past)
     if not is_health_related(question, has_history):
-        return ChatOut(reply=OFF_TOPIC_TEXT)
+        return ChatOut(reply=_save(db, user.user_id, question, OFF_TOPIC_TEXT))
 
     _check_rate(user.user_id)
-    history = [{"role": m.role, "content": m.content} for m in body.messages][-MAX_HISTORY:]
+    history = [{"role": m.role, "content": m.content} for m in past] + [{"role": "user", "content": question}]
+    history = history[-MAX_HISTORY:]
     while history and history[0]["role"] != "user":
         history.pop(0)
     system = SYSTEM_PROMPT + (_my_data_note(db, user.user_id) if body.use_my_data else "")
@@ -141,4 +182,4 @@ def chat(body: ChatIn, db: Session = Depends(get_db), user=Depends(get_current_u
     note = glucose_note(question)
     if note:
         text = note + "\n\n" + text
-    return ChatOut(reply=text or "Sorry, I could not think of an answer. Please rephrase your question.")
+    return ChatOut(reply=_save(db, user.user_id, question, text or "Sorry, I could not think of an answer. Please rephrase your question."))

@@ -78,8 +78,14 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:20px 16px}
     <form id="auth-form">
       <div id="name-wrap" class="hidden" style="margin-bottom:10px"><label for="a-name">Name</label><input id="a-name" autocomplete="name"></div>
       <div style="margin-bottom:10px"><label for="a-email">Email</label><input id="a-email" type="email" required autocomplete="email"></div>
-      <div style="margin-bottom:14px"><label for="a-pass">Password (8+ characters)</label><input id="a-pass" type="password" required minlength="8" maxlength="72" autocomplete="current-password"></div>
+      <div id="code-wrap" class="hidden" style="margin-bottom:10px"><label for="a-code">6-digit code from your e-mail</label><input id="a-code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="123456"></div>
+      <div id="pass-wrap" style="margin-bottom:14px"><label for="a-pass" id="a-pass-label">Password (8+ characters)</label><input id="a-pass" type="password" required minlength="8" maxlength="72" autocomplete="current-password"></div>
       <button class="primary" id="auth-btn" type="submit">Log in</button>
+      <p id="auth-links" style="margin:10px 0 0;font-size:14px">
+        <a href="#" id="l-forgot">Forgot password?</a>
+        <a href="#" id="l-resend" class="hidden">Resend code</a>
+        <a href="#" id="l-back" class="hidden" style="margin-left:12px">Back to log in</a>
+      </p>
       <p id="auth-note" class="muted" style="margin-bottom:0"></p>
     </form>
   </section>
@@ -171,7 +177,7 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:20px 16px}
             <button class="primary" id="chat-send" type="submit">Send</button></div>
           <label style="font-weight:normal;margin-top:8px"><input type="checkbox" id="chat-data" style="width:auto"> Share my latest glucose and HbA1c with the AI service for this chat (avoid if you prefer privacy)</label>
         </form>
-        <p><button class="small" id="chat-clear" type="button">Clear chat</button></p>
+        <p><button class="small" id="chat-clear" type="button">Clear chat</button> <span class="muted" style="font-size:13px">Your chat is saved to your account. Only you can see it.</span></p>
       </div>
     </section>
 
@@ -259,30 +265,61 @@ function showAuth(note) {
   saveToken(null);
   $('#auth').classList.remove('hidden'); $('#app').classList.add('hidden'); $('#logout').classList.add('hidden');
   $('#auth-note').textContent = note || '';
+  $('#chat-box').innerHTML = '';              // never leave one person's chat on screen for the next person
+  if (typeof setMode === 'function') setMode('login', note);
 }
 function showApp() {
   $('#auth').classList.add('hidden'); $('#app').classList.remove('hidden'); $('#logout').classList.remove('hidden');
   go('dashboard');
   run(async () => { const c = await api('/admin/check'); $('#nav-admin').classList.toggle('hidden', !c.is_admin); });
 }
-function setMode(m) {
+function setMode(m, note) {
   authMode = m;
-  $('#t-login').classList.toggle('on', m === 'login'); $('#t-register').classList.toggle('on', m === 'register');
-  $('#name-wrap').classList.toggle('hidden', m === 'login');
-  $('#a-name').required = m === 'register';
-  $('#auth-btn').textContent = m === 'login' ? 'Log in' : 'Create account';
-  $('#a-pass').autocomplete = m === 'login' ? 'current-password' : 'new-password';
+  const reg = m === 'register', ver = m === 'verify', fog = m === 'forgot', res = m === 'reset';
+  $('#t-login').classList.toggle('on', m === 'login'); $('#t-register').classList.toggle('on', reg);
+  $('#name-wrap').classList.toggle('hidden', !reg); $('#a-name').required = reg;
+  $('#code-wrap').classList.toggle('hidden', !(ver || res)); $('#a-code').required = ver || res;
+  $('#pass-wrap').classList.toggle('hidden', ver || fog); $('#a-pass').required = !(ver || fog);
+  $('#a-pass').minLength = (reg || res) ? 8 : 1;
+  $('#a-pass-label').textContent = res ? 'New password (8+ characters)' : 'Password (8+ characters)';
+  $('#a-pass').autocomplete = (reg || res) ? 'new-password' : 'current-password';
+  $('#auth-btn').textContent = { login: 'Log in', register: 'Create account', verify: 'Verify e-mail', forgot: 'Send reset code', reset: 'Set new password' }[m];
+  $('#l-forgot').classList.toggle('hidden', m !== 'login');
+  $('#l-resend').classList.toggle('hidden', !(ver || res));
+  $('#l-back').classList.toggle('hidden', m === 'login' || reg);
+  $('#a-code').value = '';
+  $('#auth-note').textContent = note || '';
 }
 $('#t-login').onclick = () => setMode('login');
 $('#t-register').onclick = () => setMode('register');
+$('#l-forgot').onclick = e => { e.preventDefault(); setMode('forgot', 'Enter your e-mail and we will send you a code.'); };
+$('#l-back').onclick = e => { e.preventDefault(); setMode('login'); };
+$('#l-resend').onclick = e => { e.preventDefault(); run(async () => {
+  const email = $('#a-email').value.trim(); if (!email) return toast('Enter your e-mail first', false);
+  const r = await api(authMode === 'verify' ? '/resend-code' : '/forgot-password', 'POST', { email }, false);
+  toast(r.message);
+}); };
+async function finishLogin(t) { saveToken(t.access_token); $('#a-pass').value = ''; showApp(); }
 $('#auth-form').onsubmit = e => { e.preventDefault(); run(async () => {
-  const email = $('#a-email').value.trim(), password = $('#a-pass').value;
+  const email = $('#a-email').value.trim(), password = $('#a-pass').value, code = $('#a-code').value.trim();
   if (authMode === 'register') {
-    await api('/register', 'POST', { name: $('#a-name').value.trim(), email, password }, false);
+    const r = await api('/register', 'POST', { name: $('#a-name').value.trim(), email, password }, false);
+    if (r.verify_required) { $('#a-pass').value = ''; return setMode('verify', r.message); }
     toast('Account created. Logging you in...');
+  } else if (authMode === 'verify') {
+    return finishLogin(await api('/verify-email', 'POST', { email, code }, false));
+  } else if (authMode === 'forgot') {
+    const r = await api('/forgot-password', 'POST', { email }, false);
+    return setMode('reset', r.message);
+  } else if (authMode === 'reset') {
+    const r = await api('/reset-password', 'POST', { email, code, new_password: password }, false);
+    setMode('login'); $('#a-pass').value = ''; return toast(r.message);
   }
-  const t = await api('/login', 'POST', { email, password }, false);
-  saveToken(t.access_token); $('#a-pass').value = ''; showApp();
+  try { await finishLogin(await api('/login', 'POST', { email, password }, false)); }
+  catch (err) {
+    if (/^Email not verified/.test(err.message)) { $('#a-pass').value = ''; setMode('verify', err.message + '. Not received it? Use Resend code.'); return; }
+    throw err;
+  }
 }); };
 $('#logout').onclick = () => showAuth('You have been logged out.');
 
@@ -535,7 +572,6 @@ $('#adm-docs').onclick = e => {
 };
 
 /* ---------- health bot ---------- */
-let chatMsgs = [];
 function chatBubble(role, text) {
   const d = document.createElement('div');
   d.style.cssText = 'margin:6px 0;padding:8px 10px;border-radius:10px;max-width:85%;white-space:pre-wrap;word-wrap:break-word;' +
@@ -544,21 +580,26 @@ function chatBubble(role, text) {
   $('#chat-box').appendChild(d); $('#chat-box').scrollTop = $('#chat-box').scrollHeight;
   return d;
 }
-function loadChat() {
-  if (!$('#chat-box').children.length) chatBubble('assistant', 'Hello! I can answer general questions about diabetes, food, exercise and this app. What would you like to know?');
+const CHAT_HELLO = 'Hello! I can answer general questions about diabetes, food, exercise and this app. What would you like to know?';
+async function loadChat() {
+  const h = await api('/chat/history');                 // this person's own saved messages
+  $('#chat-box').innerHTML = '';
+  if (!h.length) chatBubble('assistant', CHAT_HELLO);
+  h.forEach(m => chatBubble(m.role, m.content));
 }
 $('#chat-form').onsubmit = e => { e.preventDefault(); run(async () => {
   const text = $('#chat-in').value.trim(); if (!text) return;
-  $('#chat-in').value = ''; chatMsgs.push({ role: 'user', content: text }); chatBubble('user', text);
+  $('#chat-in').value = ''; chatBubble('user', text);
   const wait = chatBubble('assistant', 'Thinking...'); $('#chat-send').disabled = true;
   try {
-    const r = await api('/chat', 'POST', { messages: chatMsgs, use_my_data: $('#chat-data').checked });
-    wait.textContent = r.reply; chatMsgs.push({ role: 'assistant', content: r.reply });
+    const r = await api('/chat', 'POST', { message: text, use_my_data: $('#chat-data').checked });
+    wait.textContent = r.reply;
   } catch (err) {
-    wait.remove(); chatMsgs.pop(); throw err;       // drop the unanswered question so the history stays valid
+    wait.remove(); $('#chat-box').lastElementChild && $('#chat-box').lastElementChild.remove();   // the unanswered question is not saved either
+    $('#chat-in').value = text; throw err;
   } finally { $('#chat-send').disabled = false; $('#chat-box').scrollTop = $('#chat-box').scrollHeight; }
 }); };
-$('#chat-clear').onclick = () => { chatMsgs = []; $('#chat-box').innerHTML = ''; loadChat(); };
+$('#chat-clear').onclick = () => { if (confirm('Delete your saved chat history?')) run(async () => { await api('/chat/history', 'DELETE'); await loadChat(); }); };
 </script>
 </body>
 </html>
