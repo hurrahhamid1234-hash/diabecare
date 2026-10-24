@@ -32,6 +32,7 @@ button.small:hover{background:var(--bg)}
 button.danger{color:var(--bad)}
 button.link{background:none;border:0;color:#fff;cursor:pointer;font:inherit;text-decoration:underline}
 table{width:100%;border-collapse:collapse}
+#test-list{overflow-x:auto}
 th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);font-size:14px;vertical-align:middle}
 th{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.4px}
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:16px}
@@ -148,9 +149,12 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:20px 16px}
           <div><label for="t-unit">Unit</label><input id="t-unit" maxlength="30" value="%"></div>
           <div><label for="t-date">Date</label><input id="t-date" type="date" required></div>
           <div><label for="t-note">Note (optional)</label><input id="t-note" maxlength="255"></div>
+          <div><label for="t-file">Report photo or PDF (optional)</label><input id="t-file" type="file" accept="image/*,application/pdf"></div>
           <div><button class="primary" type="submit">Save result</button></div>
         </form></div>
-      <div class="card"><h2>Your results</h2><p><button class="small" id="csv-tests" type="button">Download CSV</button></p><div id="test-list"></div></div>
+      <div class="card"><h2>Your results</h2><p><button class="small" id="csv-tests" type="button">Download CSV</button></p><div id="test-list"></div>
+        <input type="file" id="t-attach" class="hidden" accept="image/*,application/pdf">
+        <p class="muted" style="font-size:13px;margin-bottom:0">Photos and PDFs are stored in your account (up to 5 files per result, 5 MB each). Only you can open them.</p></div>
     </section>
 
     <!-- Appointments -->
@@ -173,8 +177,12 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:20px 16px}
         <p class="muted" style="margin-top:0">General diabetes education only. It is an AI, it can make mistakes, and it is not a doctor. In an emergency call your local emergency number.</p>
         <div id="chat-box" style="height:340px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;padding:10px;background:#fafcfe"></div>
         <form id="chat-form" style="margin-top:10px">
-          <div style="display:flex;gap:8px"><input id="chat-in" maxlength="1500" placeholder="Ask about glucose, food, exercise, HbA1c..." autocomplete="off" required>
+          <div id="chat-file-chip" class="hidden" style="margin-bottom:6px;font-size:14px">Attached: <b id="chat-file-name"></b> <button class="small" id="chat-file-x" type="button">Remove</button></div>
+          <div style="display:flex;gap:8px"><input id="chat-in" maxlength="1500" placeholder="Ask about glucose, food, exercise, HbA1c..." autocomplete="off">
+            <button class="small" id="chat-attach" type="button" title="Attach a photo or PDF of a report">Attach</button>
             <button class="primary" id="chat-send" type="submit">Send</button></div>
+          <input type="file" id="chat-file" class="hidden" accept="image/*,application/pdf">
+          <p class="muted" style="font-size:13px;margin:6px 0 0">An attached photo or PDF is sent to the AI service so it can read it. It is not saved in your account. Do not attach anything you want to keep private.</p>
           <label style="font-weight:normal;margin-top:8px"><input type="checkbox" id="chat-data" style="width:auto"> Share my latest glucose and HbA1c with the AI service for this chat (avoid if you prefer privacy)</label>
         </form>
         <p><button class="small" id="chat-clear" type="button">Clear chat</button> <span class="muted" style="font-size:13px">Your chat is saved to your account. Only you can see it.</span></p>
@@ -232,7 +240,7 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:20px 16px}
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let token = null, authMode = 'login', msgTimer;
+let token = null, authMode = 'login', msgTimer, chatFile = null, attachFor = null;
 try { token = localStorage.getItem('dc_token'); } catch (e) {}
 function saveToken(t) { token = t; try { t ? localStorage.setItem('dc_token', t) : localStorage.removeItem('dc_token'); } catch (e) {} }
 
@@ -266,6 +274,7 @@ function showAuth(note) {
   $('#auth').classList.remove('hidden'); $('#app').classList.add('hidden'); $('#logout').classList.add('hidden');
   $('#auth-note').textContent = note || '';
   $('#chat-box').innerHTML = '';              // never leave one person's chat on screen for the next person
+  chatFile = null; showChatFile();
   if (typeof setMode === 'function') setMode('login', note);
 }
 function showApp() {
@@ -411,22 +420,73 @@ $('#med-form').onsubmit = e => { e.preventDefault(); run(async () => {
 }); };
 
 /* ---------- lab tests ---------- */
+/* ---------- files (photos and PDFs) ---------- */
+function toBase64(blob) {
+  return new Promise((ok, bad) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1]); r.onerror = () => bad(new Error('Could not read the file')); r.readAsDataURL(blob); });
+}
+// photo -> JPEG, longest side 1600 px (smaller upload, and the phone's location data is dropped); PDF -> as it is
+async function prepareFile(file, maxBytes) {
+  if (!file) return null;
+  let blob = file, name = file.name || 'file';
+  if (/^image\//.test(file.type) || /\.(jpe?g|png|webp)$/i.test(name)) {
+    let bmp;
+    try { bmp = await createImageBitmap(file); } catch (e) { throw new Error('Could not open this image. Please use a JPG or PNG photo'); }
+    const k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+    const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(bmp, 0, 0, c.width, c.height);
+    blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.85));
+    if (!blob) throw new Error('Could not process this image');
+    name = name.replace(/\.[^.]*$/, '') + '.jpg';
+  } else if (file.type !== 'application/pdf' && !/\.pdf$/i.test(name)) {
+    throw new Error('Please choose a photo (JPG, PNG, WEBP) or a PDF');
+  }
+  if (blob.size > maxBytes) throw new Error('That file is too big. The limit is ' + Math.round(maxBytes / 1048576) + ' MB');
+  return { name, data: await toBase64(blob) };
+}
+async function openFile(id) {
+  const res = await fetch('/files/' + id, { headers: { Authorization: 'Bearer ' + token } });
+  if (!res.ok) throw new Error('Could not open the file');
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+async function uploadTestFile(testId, file) {
+  const f = await prepareFile(file, 5 * 1048576); if (!f) return;
+  await api(`/tests/${testId}/files`, 'POST', { filename: f.name, data: f.data });
+}
+
+/* ---------- lab tests ---------- */
 async function loadTests() {
-  const rows = await api('/tests');
+  const [rows, files] = await Promise.all([api('/tests'), api('/files')]);
+  const byTest = {}; files.forEach(f => (byTest[f.test_id] = byTest[f.test_id] || []).push(f));
   $('#test-list').innerHTML = rows.length
-    ? `<table><tr><th>Date</th><th>Test</th><th>Result</th><th>Note</th><th></th></tr>${rows.map(r =>
+    ? `<table><tr><th>Date</th><th>Test</th><th>Result</th><th>Note</th><th>Report files</th><th></th></tr>${rows.map(r =>
       `<tr><td>${esc(r.test_date)}</td><td>${esc(r.test_name)}</td><td><b>${esc(r.result)}</b> ${esc(r.unit)}</td><td>${esc(r.notes)}</td>
+       <td>${(byTest[r.test_id] || []).map(f => `<span style="display:inline-block;max-width:200px;word-break:break-all"><a href="#" data-file="${f.file_id}">${esc(f.filename)}</a> <button class="small" data-fdel="${f.file_id}" title="Remove this file" aria-label="Remove ${esc(f.filename)}">x</button></span>`).join('<br>')}
+           <button class="small" data-attach="${r.test_id}">+ Attach</button></td>
        <td><button class="small danger" data-del="${r.test_id}">Delete</button></td></tr>`).join('')}</table>`
     : '<p class="muted">No results yet.</p>';
 }
 $('#test-form').onsubmit = e => { e.preventDefault(); run(async () => {
-  await api('/tests', 'POST', { test_name: $('#t-name').value.trim(), result: +$('#t-res').value, unit: $('#t-unit').value.trim() || null,
+  const file = $('#t-file').files[0];
+  const t = await api('/tests', 'POST', { test_name: $('#t-name').value.trim(), result: +$('#t-res').value, unit: $('#t-unit').value.trim() || null,
     test_date: $('#t-date').value, notes: $('#t-note').value.trim() || null });
   e.target.reset(); $('#t-name').value = 'HbA1c'; $('#t-unit').value = '%'; $('#t-date').valueAsDate = new Date();
-  toast('Result saved'); await loadTests();
+  try { if (file) await uploadTestFile(t.test_id, file); toast(file ? 'Result and file saved' : 'Result saved'); }
+  catch (err) { toast('Result saved, but the file was not: ' + err.message, false); }
+  await loadTests();
 }); };
-$('#test-list').onclick = e => { const id = e.target.dataset.del; if (id && confirm('Delete this result?')) run(async () => {
-  await api('/tests/' + id, 'DELETE'); toast('Deleted'); await loadTests(); }); };
+$('#test-list').onclick = e => {
+  const d = e.target.dataset;
+  if (d.file) { e.preventDefault(); run(() => openFile(d.file)); }
+  else if (d.fdel) { if (confirm('Remove this file?')) run(async () => { await api('/files/' + d.fdel, 'DELETE'); toast('File removed'); await loadTests(); }); }
+  else if (d.attach) { attachFor = d.attach; $('#t-attach').value = ''; $('#t-attach').click(); }
+  else if (d.del && confirm('Delete this result?')) run(async () => { await api('/tests/' + d.del, 'DELETE'); toast('Deleted'); await loadTests(); });
+};
+$('#t-attach').onchange = e => run(async () => {
+  const file = e.target.files[0]; if (!file || !attachFor) return;
+  await uploadTestFile(attachFor, file); toast('File added'); await loadTests();
+});
 
 /* ---------- risk estimate ---------- */
 const YN = [['CholCheck','Cholesterol checked in last 5 years',1],['Smoker','Smoked 100+ cigarettes in lifetime',0],
@@ -587,16 +647,23 @@ async function loadChat() {
   if (!h.length) chatBubble('assistant', CHAT_HELLO);
   h.forEach(m => chatBubble(m.role, m.content));
 }
+function showChatFile() {
+  $('#chat-file-chip').classList.toggle('hidden', !chatFile); $('#chat-file-name').textContent = chatFile ? chatFile.name : '';
+}
+$('#chat-attach').onclick = () => { $('#chat-file').value = ''; $('#chat-file').click(); };
+$('#chat-file').onchange = e => run(async () => { chatFile = await prepareFile(e.target.files[0], 3 * 1048576); showChatFile(); });
+$('#chat-file-x').onclick = () => { chatFile = null; showChatFile(); };
 $('#chat-form').onsubmit = e => { e.preventDefault(); run(async () => {
-  const text = $('#chat-in').value.trim(); if (!text) return;
-  $('#chat-in').value = ''; chatBubble('user', text);
-  const wait = chatBubble('assistant', 'Thinking...'); $('#chat-send').disabled = true;
+  const typed = $('#chat-in').value.trim(); if (!typed && !chatFile) return;
+  const text = typed || 'Please explain this in simple words.', file = chatFile;
+  $('#chat-in').value = ''; chatBubble('user', (file ? '[Attached: ' + file.name + '] ' : '') + text);
+  const wait = chatBubble('assistant', file ? 'Reading your file...' : 'Thinking...'); $('#chat-send').disabled = true;
   try {
-    const r = await api('/chat', 'POST', { message: text, use_my_data: $('#chat-data').checked });
-    wait.textContent = r.reply;
+    const r = await api('/chat', 'POST', { message: text, use_my_data: $('#chat-data').checked, attachment: file ? { name: file.name, data: file.data } : null });
+    wait.textContent = r.reply; chatFile = null; showChatFile();
   } catch (err) {
     wait.remove(); $('#chat-box').lastElementChild && $('#chat-box').lastElementChild.remove();   // the unanswered question is not saved either
-    $('#chat-in').value = text; throw err;
+    $('#chat-in').value = typed; throw err;
   } finally { $('#chat-send').disabled = false; $('#chat-box').scrollTop = $('#chat-box').scrollHeight; }
 }); };
 $('#chat-clear').onclick = () => { if (confirm('Delete your saved chat history?')) run(async () => { await api('/chat/history', 'DELETE'); await loadChat(); }); };
