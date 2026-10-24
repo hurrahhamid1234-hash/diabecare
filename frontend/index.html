@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DiabeCare</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1f3a5f">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="DiabeCare">
 <style>
 :root{
   --navy:#1f3a5f; --teal:#2a7f8e; --bg:#f3f6f9; --card:#fff; --line:#d8e0e8;
@@ -66,6 +72,7 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:20px 16px}
 <body>
 <header>
   <h1>DiabeCare<small>health records &amp; risk estimate</small></h1>
+  <button class="link hidden" id="install" style="margin-left:auto">Install app</button>
   <button class="link hidden" id="logout">Log out</button>
 </header>
 
@@ -667,6 +674,13 @@ $('#chat-form').onsubmit = e => { e.preventDefault(); run(async () => {
   } finally { $('#chat-send').disabled = false; $('#chat-box').scrollTop = $('#chat-box').scrollHeight; }
 }); };
 $('#chat-clear').onclick = () => { if (confirm('Delete your saved chat history?')) run(async () => { await api('/chat/history', 'DELETE'); await loadChat(); }); };
+
+/* ---------- install as an app ---------- */
+let installEvent = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvent = e; $('#install').classList.remove('hidden'); });
+$('#install').onclick = async () => { if (!installEvent) return; installEvent.prompt(); await installEvent.userChoice.catch(() => {}); installEvent = null; $('#install').classList.add('hidden'); };
+window.addEventListener('appinstalled', () => $('#install').classList.add('hidden'));
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 </script>
 </body>
 </html>
