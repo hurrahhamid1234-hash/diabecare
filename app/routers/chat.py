@@ -33,7 +33,7 @@ MODEL = os.environ.get("LLM_MODEL", os.environ.get("OLLAMA_MODEL", "llama3.2:3b"
 MAX_TOKENS = 400
 MAX_HISTORY = 10                    # last messages sent to the model
 MAX_ATTACH = 4 * 1024 * 1024         # attachment size limit in bytes
-KEEP_MESSAGES = 200                 # stored messages per user (older ones are deleted)
+SHOW_MESSAGES = 500                 # newest messages shown when the chat opens (all are kept in the database)
 RATE_LIMIT = 30                     # messages per user per hour
 _hits: dict[int, deque] = defaultdict(deque)
 
@@ -100,11 +100,6 @@ def _save(db: Session, user_id: int, question: str, answer: str) -> str:
     db.add(ChatLog(user_id=user_id, role="user", content=question))
     db.add(ChatLog(user_id=user_id, role="assistant", content=answer))
     db.commit()
-    old = db.scalars(select(ChatLog.message_id).where(ChatLog.user_id == user_id)
-                     .order_by(ChatLog.message_id.desc()).offset(KEEP_MESSAGES)).all()
-    if old:
-        db.execute(delete(ChatLog).where(ChatLog.message_id.in_(old)))
-        db.commit()
     return answer
 
 
@@ -136,7 +131,7 @@ def _my_data_note(db: Session, user_id: int) -> str:
 
 @router.get("/chat/history", response_model=list[HistoryItem])
 def chat_history(db: Session = Depends(get_db), user=Depends(get_current_user)):
-    return [HistoryItem(role=m.role, content=m.content) for m in _recent(db, user.user_id, 100)]
+    return [HistoryItem(role=m.role, content=m.content) for m in _recent(db, user.user_id, SHOW_MESSAGES)]
 
 
 @router.delete("/chat/history", status_code=204)
